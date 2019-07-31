@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+
+import rospy
+import tf
+
+import anki_vector
+from anki_vector.util import degrees,radians,Vector3,Vector2
+
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3
+
+def main():
+    print("Initializing...", end = '')
+
+    rospy.init_node('robot_odom_publisher')
+
+    odom_pub = rospy.Publisher('odom', Odometry, queue_size=50)
+    odom_broadcaster = tf.TransformBroadcaster()
+
+    current_time = rospy.Time.now()
+    last_time = rospy.Time.now()
+
+    rate = rospy.Rate(10)
+
+    robot = anki_vector.Robot("00a10a53",enable_nav_map_feed=True,behavior_control_level=None)
+    robot.connect()
+
+    robot_pose = robot.pose.position
+    robot_angle = robot.pose_angle_rad
+
+    x = robot_pose.x/1000.
+    y = robot_pose.y/1000.
+    th = robot_angle
+
+    print("Done")
+
+    while not rospy.is_shutdown():
+        current_time = rospy.Time.now()
+        robot_pose = robot.pose.position
+        robot_angle = robot.pose_angle_rad
+
+        nx = robot_pose.x/1000.
+        ny = robot_pose.y/1000.
+        nth = robot_angle
+
+        dt = (current_time - last_time).to_sec()
+        dx = nx - x
+        dy = ny - y
+        dth = nth - th
+
+        vx = dx*dt
+        vy = dy*dt
+        vth = dth*dt
+
+        odom_quat = tf.transformations.quaternion_from_euler(0, 0, robot_angle)
+
+        # first, we'll publish the transform over tf
+        odom_broadcaster.sendTransform(
+            (nx, ny, 0.),
+            odom_quat,
+            current_time,
+            "base_link",
+            "odom"
+        )
+
+        # next, we'll publish the odometry message over ROS
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = "odom"
+
+        # set the position
+        odom.pose.pose = Pose(Point(nx, ny, 0.), Quaternion(*odom_quat))
+
+        # set the velocity
+        odom.child_frame_id = "base_link"
+        odom.twist.twist = Twist(Vector3(vx, vy, 0), Vector3(0, 0, vth))
+
+        # publish the message
+        odom_pub.publish(odom)
+
+        x = nx
+        y = ny
+        th = nth
+
+        last_time = current_time
+        rate.sleep()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

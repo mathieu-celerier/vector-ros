@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+import time
+import numpy as np
+from math import *
+
+import anki_vector
+from anki_vector.util import degrees,radians,Vector3,Vector2
+
+import rospy
+from sensor_msgs.msg import LaserScan
+
+
+LASER_MAX_RANGE = 400       # millimeters
+LASER_AMOUNT = 10           # number
+LASER_STEP_ANGLE = 3        # degrees
+
+class Laser :
+    def __init__(self,angle,start_point,len):
+        self.start_point = start_point
+        self.angle = degrees(angle).radians
+        self.len = len
+        self.end_point = Vector3(start_point.x + self.len*cos(self.angle),start_point.y + self.len*sin(self.angle),0)
+        #print("({0:4.2f},{1:4.2f})".format(self.end_point.x,self.end_point.y))
+    def __str__(self):
+        return("<{0} end: x: {1:6.2f} y: {2:6.2f}>".format(self.__class__.__name__, self.end_point.x, self.end_point.y))
+
+    def __repr__(self):
+        return str(self)
+
+    def intersect(self, A, B, C, D) :
+        DET_TOLERANCE = 0.00000001
+
+        # the first line is pt1 + r*(pt2-pt1)
+        # in component form:
+        x1, y1 = A;   x2, y2 = B
+        dx1 = x2 - x1;  dy1 = y2 - y1
+
+        # the second line is ptA + s*(ptB-ptA)
+        x, y = C;   xB, yB = D;
+        dx = xB - x;  dy = yB - y;
+
+        DET = (-dx1 * dy + dy1 * dx)
+        if fabs(DET) < DET_TOLERANCE: return None
+
+        # now, the determinant should be OK
+        DETinv = 1.0/DET
+
+        # find the scalar amount along the "self" segment
+        s = DETinv * (-dy  * (x-x1) +  dx * (y-y1))
+
+        # find the scalar amount along the input line
+        k = DETinv * (-dy1 * (x-x1) + dx1 * (y-y1))
+
+        if s > 0 and k > 0 and k < 1:
+            return s * sqrt((x2-x1)**2 + (y2-y1)**2)
+        else:
+            return None
+        # vecLaser = B-A
+        # vecObstacle = -(D-C)
+        # vecCmoinsA = C-A
+        # H = np.array( [[int(vecLaser[0]),int(vecObstacle[0])],[int(vecLaser[1]),int(vecObstacle[1])]] )
+        # det = np.linalg.det(H)
+        # if det == 0 :
+        #     print("Non inversible")
+        #     return None
+        # else :
+        #     invH = np.linalg.inv(H)
+        #     CmoinsA = np.array( [[vecCmoinsA[0]],[vecCmoinsA[1]]] )
+        #     param = invH.dot(CmoinsA)
+        #     if param[0] > 0 and param[1] > 0 and param[1] < 1 :
+        #         return param[0] * sqrt(vecLaser[0]**2 + vecLaser[1]**2)
+        #     else :
+        #         return None
+
+
+
+    def _colideQuadBBox(self,node):
+        TR = np.array([node.center.x + node.size/2, node.center.y + node.size/2])
+        BR = np.array([node.center.x + node.size/2, node.center.y - node.size/2])
+        TL = np.array([node.center.x - node.size/2, node.center.y + node.size/2])
+        BL = np.array([node.center.x - node.size/2, node.center.y - node.size/2])
+
+        Start = np.array([self.start_point.x,self.start_point.y])
+        End = np.array([self.end_point.x,self.end_point.y])
+
+        corners = [TR,BR,TL,BL]
+
+        min_dist = inf
+        for i in range(4) :
+            j = (i+1)%4
+            dist = self.intersect(Start,End,corners[i],corners[j])
+            if dist :
+                min_dist = min(min_dist,dist)
+
+        if min_dist == inf :
+            return None
+        else :
+            return min_dist
+
+    def cast_ray(self,node):
+        colision = self._colideQuadBBox(node)
+        if not colision:
+            return None
+        else :
+            if node.children:
+                dist_children = []
+                for child in node.children:
+                    dist = self.cast_ray(child)
+                    if dist:
+                        dist_children.append(dist)
+
+                if dist_children :
+                    return min(dist_children)
+                else:
+                    return None
+            elif node.content == 4 or node.content == 7 :
+                return colision
+            else :
+                return None
+
+def main() :
+    print("Initializing...", end = '')
+    robot = anki_vector.Robot("00a10a53",enable_nav_map_feed=True,behavior_control_level=None)
+    robot.connect()
+
+    lasers = []
+
+    # Get some datas from the map
+    map = robot._nav_map.latest_nav_map
+    #print(map)
+    map_tree_root = map.root_node
+    map_center = map.center
+
+    # Get robot position/action
+    robot_pose = robot.pose.position
+    robot_angle = robot.pose_angle_rad
+    #print("Position du robot x: {} y: {}".format(robot_pose.x,robot_pose.y))
+    #print("Angle du robot {}".format(robot_angle))
+
+    # Generate lasers
+    for index in range(LASER_AMOUNT + 1) :
+        lasers.append(Laser(radians(robot_angle).degrees + LASER_STEP_ANGLE*LASER_AMOUNT/2 - index*LASER_STEP_ANGLE, robot_pose, LASER_MAX_RANGE))
+
+    rospy.init_node('laser_scan_publisher')
+
+    scan_pub = rospy.Publisher('vector/laser_scan', LaserScan, queue_size=10)
+
+    num_lasers = 11
+
+    count = 0
+    rate = rospy.Rate(2.0)
+
+    print("Done")
+
+    while not rospy.is_shutdown():
+        current_time = rospy.Time.now()
+
+        # Get some datas from the map
+        map = robot._nav_map.latest_nav_map
+        print(map)
+        #print(map)
+        map_tree_root = map.root_node
+
+        # Get robot position/action
+        robot_pose = robot.pose.position
+        robot_angle = robot.pose_angle_rad
+
+        lasers = []
+
+        # Generate lasers
+        for index in range(LASER_AMOUNT + 1) :
+            lasers.append(Laser(radians(robot_angle).degrees + LASER_STEP_ANGLE*LASER_AMOUNT/2 - index*LASER_STEP_ANGLE, robot_pose, LASER_MAX_RANGE))
+
+        scan = LaserScan()
+
+        scan.header.stamp = current_time
+        scan.header.frame_id = 'base_virtual_laser'
+        scan.angle_min = -0.2617993878
+        scan.angle_max = 0.2617993878
+        scan.angle_increment = 0.05235987756
+        scan.scan_time = 0.5
+        scan.range_min = 0.03
+        scan.range_max = 0.4
+
+        i=0
+        for laser in lasers :
+            dist = laser.cast_ray(map_tree_root)
+            if dist:
+                scan.ranges.append(dist/1000)
+            else:
+                scan.ranges.append(0.5)
+            i=i+1
+
+        scan_pub.publish(scan)
+        rate.sleep()
+
+    robot.disconnect()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

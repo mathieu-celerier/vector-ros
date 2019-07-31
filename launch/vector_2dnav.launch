@@ -1,0 +1,5 @@
+<launch>
+	<node pkg="vector_ros" name="laser_scan_publisher" type="laser_scan_publisher" output="screen"/>
+	<node pkg="vector_ros" name="tf_publisher" type="tf_publisher" output="screen"/>
+	<node pkg="vector_ros" name="odom_publisher" type="odom_publisher" output="screen"/>
+</launch> 

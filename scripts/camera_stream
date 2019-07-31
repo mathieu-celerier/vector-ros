@@ -1,0 +1,60 @@
+#! /usr/bin/env python3
+import sys, rospy
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+
+import numpy
+import threading
+import cv2
+
+import anki_vector
+from anki_vector import events
+from anki_vector.util import degrees
+
+def on_image(robot, event_type, event, done):
+    print("Event occured")
+    cv_image = numpy.array(event.image)
+    #cv_image = cv_image[:, :, ::-1].copy()			# Convert RGB to BGR
+    cv_image = cv2.resize(cv_image,(640,352),interpolation = cv2.INTER_AREA)
+    image_pub.publish(bridge.cv2_to_imgmsg(cv_image, "rgb8"))
+    done.set()
+
+if __name__ == '__main__':
+    print("Initializing...", end = '')
+    rospy.init_node('vector')
+    bridge = CvBridge()
+
+    image_pub = rospy.Publisher("vector/camera/image_raw",Image, queue_size=10)
+    info_pub = rospy.Publisher("vector/camera/camera_info", CameraInfo, queue_size=10)
+
+    robot = anki_vector.Robot("00a10a53", enable_face_detection=True, behavior_control_level=None)
+    robot.connect()
+    robot.camera.init_camera_feed()
+    done = threading.Event()
+    robot.events.subscribe(on_image, events.Events.new_raw_camera_image, done)
+
+    rate = rospy.Rate(30)
+
+    camera_info_msg = CameraInfo()
+
+    print("Done")
+
+    while not rospy.is_shutdown():
+        time = rospy.Time.now()
+
+        camera_info_msg.header.stamp = time
+        camera_info_msg.header.frame_id = 'base_link'       # TODO change to real camera frame (need to create one)
+
+        camera_info_msg.height = 352
+        camera_info_msg.width = 640
+
+        camera_info_msg.distortion_model = 'plumb_bob'
+        camera_info_msg.K = [411.2856586890491, 0.0, 193.84161108108938, 0.0, 403.6822491772906, 288.9762424803516, 0.0, 0.0, 1.0]
+        camera_info_msg.D = [-0.29635999421779685, 0.02885063383830947, -0.043025034264255364, 0.05368278914745108, 0.0]
+        camera_info_msg.P = [319.38787841796875, 0.0, 184.50341585060232, 0.0, 0.0, 386.3175354003906, 290.25336544839047, 0.0, 0.0, 0.0, 1.0, 0.0]
+
+        info_pub.publish(camera_info_msg)
+
+       	rate.sleep()
+
+    robot.disconnect()
