@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+
+import rospy
+import anki_vector
+from geometry_msgs.msg import Twist
+
+D = 48      # Distance between the wheels in mm
+
+robot = None
+
+def callback(msg):
+    if robot:
+        vx = msg.linear.x * 1000                # Get forward speed command and convert from m to mm
+        vth = msg.angular.z                     # Get rotation speed command
+
+        vr = D*vth/2                            # Calculate the speed to apply to the wheels for the rotation
+
+                                                # vr is calculated based on trigonometric rotations
+        vd = vx + vr                            # so it should be added on the right wheel following the rotation
+        vl = vx - vr                            # and substract from the left still following the rotation
+
+        print(str(vx) + ' ' + str(vth) + ' ' + str(vr) + ' ' + str(vd) + ' ' + str(vl))
+
+        robot.motors.set_wheel_motors(vl,vd)     # Set the robot's wheels speed
+
+def main():
+    print("Initializing...", end = '')
+
+    rospy.init_node('base_controller')
+    rospy.Subscriber("cmd_vel",Twist, callback)
+
+    print("Done")
+
+    global robot
+
+    robot = anki_vector.Robot("00a10a53",enable_nav_map_feed=True)
+    robot.connect()
+
+    rospy.spin()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,41 @@
+#! /usr/bin/env python3
+import sys, rospy
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+
+import numpy
+
+import anki_vector
+from anki_vector import events
+
+if __name__ == '__main__':
+    print("Initializing...", end = '')
+    rospy.init_node('vector')
+    bridge = CvBridge()
+    image_pub = rospy.Publisher("vector_ros/camera/image_raw",Image, queue_size=1)
+
+    rate = rospy.Rate(30.0)
+
+    robot = anki_vector.Robot("00a10a53")
+    robot.connect()
+
+    while not robot.camera.image_streaming_enabled():
+        robot.camera.init_camera_feed()
+
+    print("Done")
+
+    while not rospy.is_shutdown():
+        if not robot.camera.image_streaming_enabled():
+            robot.camera.init_camera_feed()
+
+        image = robot.camera.latest_image
+        print("Captured")
+        image = image.raw_image
+
+        cv_image = numpy.array(image)
+        cv_image = cv_image[:, :, ::-1].copy()			# Convert RGB to BGR
+        image_pub.publish(bridge.cv2_to_imgmsg(cv_image, "bgr8"))
+
+        rate.sleep()
+
+    robot.disconnect()
