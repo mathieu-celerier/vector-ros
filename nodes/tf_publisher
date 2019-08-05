@@ -20,4 +20,9 @@ if __name__ == '__main__':
                          rospy.Time.now(),
                          "odom",
                          "map")
+        br.sendTransform((0.0,0.1,0.0),
+                         (0,0,0,1),
+                         rospy.Time.now(),
+                         "toy",
+                         "base_link")
         rate.sleep()

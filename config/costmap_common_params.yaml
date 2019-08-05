@@ -1,9 +1,9 @@
 obstacle_range: 0.35
 raytrace_range: 0.4
 footprint: [[-0.015,-0.005],[0.015,-0.005],[0.015,0.005],[-0.015,0.005]]
-#robot_radius: ir_of_robot
 inflation_radius: 0.01
 
 observation_sources: vector/laser_scan
 
 vector/laser_scan: {sensor_frame: base_virtual_laser, data_type: LaserScan, topic: vector/laser_scan, marking: true, clearing: true}
+
